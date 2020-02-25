@@ -1,4 +1,5 @@
 import * as React from 'react';
+import throttle from 'lodash/throttle';
 import classNames from 'classnames';
 import RcTable from 'rc-table';
 import { TableProps as RcTableProps, INTERNAL_HOOKS } from 'rc-table/lib/Table';
@@ -80,8 +81,9 @@ export interface TableProps<RecordType>
   rowSelection?: TableRowSelection<RecordType>;
 
   getPopupContainer?: GetPopupContainer;
-  scroll?: RcTableProps<RecordType>['scroll'] & {
+  scroll?: Omit<RcTableProps<RecordType>['scroll'], 'y'> & {
     scrollToFirstRowOnChange?: boolean;
+    y?: number | true;
   };
   sortDirections?: SortOrder[];
 }
@@ -402,6 +404,72 @@ function Table<RecordType extends object = any>(props: TableProps<RecordType>) {
   const wrapperClassNames = classNames(`${prefixCls}-wrapper`, {
     [`${prefixCls}-wrapper-rtl`]: direction === 'rtl',
   });
+
+  const calcBodyHeight = React.useCallback(
+    throttle(() => {
+      if (props.scroll && props.scroll.y === true && internalRefs.body.current) {
+        // const tbody = internalRefs.body.current.querySelectorAll('.ant-table-tbody')[0];
+        const antdTable = internalRefs.body.current.closest('.ant-table');
+        const thead = antdTable ? antdTable.querySelectorAll('thead')[0] : null;
+        const doms: Element[] = [];
+        if (thead) {
+          doms.push(thead);
+        }
+        if (topPaginationNode) {
+          const node = antdTable?.previousElementSibling;
+          if (node) {
+            doms.push(node);
+          }
+        }
+        if (bottomPaginationNode) {
+          const node = antdTable?.nextElementSibling;
+          if (node) {
+            doms.push(node);
+          }
+        }
+        const screenHeight =
+          window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
+        setUsedY(
+          screenHeight -
+            doms.reduce((prev, dom) => {
+              if (dom == null) {
+                return prev;
+              }
+              const target = dom as HTMLElement;
+              const cpStyle = window.getComputedStyle(target);
+              const height =
+                target.offsetHeight +
+                (window.parseFloat(cpStyle.getPropertyValue('margin-top')) || 0) +
+                (window.parseFloat(cpStyle.getPropertyValue('margin-bottom')) || 0);
+              return prev + height;
+            }, 0),
+        );
+      }
+    }, 100),
+    [],
+  );
+
+  const [usedY, setUsedY] = React.useState<number | undefined>(
+    typeof scroll?.y === 'number' ? scroll.y : undefined,
+  );
+
+  React.useEffect(() => {
+    window.addEventListener('resize', calcBodyHeight);
+    return () => {
+      window.removeEventListener('resize', calcBodyHeight);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (scroll) {
+      if (scroll.y === true) {
+        calcBodyHeight();
+        return;
+      }
+      setUsedY(scroll.y);
+    }
+  }, [pageData, props]);
+
   return (
     <div
       className={wrapperClassNames}
@@ -413,6 +481,10 @@ function Table<RecordType extends object = any>(props: TableProps<RecordType>) {
         {topPaginationNode}
         <RcTable<RecordType>
           {...props}
+          scroll={{
+            ...scroll,
+            y: usedY,
+          }}
           expandable={mergedExpandable}
           prefixCls={prefixCls}
           className={classNames(className, {
