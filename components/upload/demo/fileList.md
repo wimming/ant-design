@@ -58,7 +58,7 @@ class MyUpload extends React.Component {
 
   render() {
     const props = {
-      action: 'https://www.mocky.io/v2/5cc8019d300000980a055e76',
+      action: 'http://10.50.248.75:8080/background/settlement/batch_set_rule',
       onChange: this.handleChange,
       multiple: true,
     };
